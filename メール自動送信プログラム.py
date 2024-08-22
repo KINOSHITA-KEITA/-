@@ -1,9 +1,10 @@
 import sys
 import smtplib
+import mimetypes
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
-from os.path import basename
+from os.path import basename, splitext
 import openpyxl as excel
 
 ROW_PAYLOAD_START = 2
@@ -36,18 +37,23 @@ def get_smtp_connection(ws_setting):
     except Exception as e:
         sys.exit(f"SMTPサーバー接続中にエラーが発生しました: {e}")
 
-def send_mail(server, mail_from, mail_to, subject, body, attachment=None):
+def send_mail(server, mail_from, mail_to, subject, body, attachments=None):
     try:
-        if attachment:
-            message = MIMEMultipart()
-            message.attach(MIMEText(body))
-            
-            with open(attachment, 'rb') as f:
-                part = MIMEApplication(f.read(), Name=basename(attachment))
-                part['Content-Disposition'] = f'attachment; filename="{basename(attachment)}"'
-                message.attach(part)
-        else:
-            message = MIMEText(body)
+        message = MIMEMultipart()
+        message.attach(MIMEText(body))
+        
+        if attachments:
+            for attachment in attachments.split(','):
+                attachment = attachment.strip()  # 余分な空白を削除
+                mime_type, _ = mimetypes.guess_type(attachment)  # MIMEタイプを取得
+                if mime_type is None:
+                    mime_type = "application/octet-stream"  # MIMEタイプが不明の場合
+                
+                with open(attachment, 'rb') as f:
+                    part = MIMEApplication(f.read(), Name=basename(attachment))
+                    part.add_header('Content-Disposition', 'attachment', filename=basename(attachment))
+                    part.add_header('Content-Type', mime_type)  # MIMEタイプを設定
+                    message.attach(part)
         
         message['Subject'] = subject
         message['From'] = mail_from
@@ -59,7 +65,7 @@ def send_mail(server, mail_from, mail_to, subject, body, attachment=None):
 
 def main():
     if len(sys.argv) != 2:
-        sys.exit("使用方法: python script.py <Excelファイルパス>")
+        sys.exit("使用方法: python script.py <Excelファイルパス> ドラッグ＆ドロップで実行可能です。")
     
     file_path = sys.argv[1]
     ws_setting, ws_main = load_excel(file_path)
@@ -70,10 +76,10 @@ def main():
             mail_to = ws_main.cell(row=row, column=COL_MAIL_TO).value
             subject = ws_main.cell(row=row, column=COL_MAIL_SUBJECT).value
             body = ws_main.cell(row=row, column=COL_MAIL_BODY).value
-            attachment = ws_main.cell(row=row, column=COL_MAIL_ATTACHMENT).value
+            attachments = ws_main.cell(row=row, column=COL_MAIL_ATTACHMENT).value
             
             if mail_to:
-                send_mail(server, mail_from, mail_to, subject, body, attachment)
+                send_mail(server, mail_from, mail_to, subject, body, attachments)
     except Exception as e:
         print(f"メール送信処理中にエラーが発生しました: {e}")
     finally:
